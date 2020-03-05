@@ -2,9 +2,13 @@
 [mqtt]
 host = 127.0.0.1
 port = 1883
+login = mqttlogin # is optional
+password = mqttpassword # is optional, but needed if login is set
 
+# root of the used topics
+roottopic = vlx2mqtt
 # topic for status messages
-statustopic = vlx2mqtt/status
+statustopic = status
 
 # KLF200 related config
 [velux]
@@ -13,5 +17,3 @@ password = klf200WiFiPassword
 
 [log]
 verbose = false
-logfile = /tmp/vlx2mqtt.log
-

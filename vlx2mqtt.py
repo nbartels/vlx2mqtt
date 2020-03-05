@@ -24,12 +24,14 @@ config.read(args.config_file)
 # [mqtt]
 MQTT_HOST = config.get("mqtt", "host")
 MQTT_PORT = config.getint("mqtt", "port")
+MQTT_LOGIN = config.get("mqtt", "login")
+MQTT_PASSWORD = config.get("mqtt", "password")
 STATUSTOPIC = config.get("mqtt", "statustopic")
+ROOT_TOPIC = config.get("mqtt", "roottopic")
 # [velux]
 VLX_HOST = config.get("velux", "host")
 VLX_PW = config.get("velux", "password")
 # [log]
-LOGFILE = config.get("log", "logfile")
 VERBOSE = config.get("log", "verbose")
 
 APPNAME = "vlx2mqtt"
@@ -40,10 +42,11 @@ nodes = {}
 
 # init logging 
 LOGFORMAT = '%(asctime)-15s %(message)s'
+
 if VERBOSE:
-	logging.basicConfig(filename=LOGFILE, format=LOGFORMAT, level=logging.DEBUG)
+	logging.basicConfig(stream=sys.stdout, format=LOGFORMAT, level=logging.DEBUG)
 else:
-	logging.basicConfig(filename=LOGFILE, format=LOGFORMAT, level=logging.INFO)
+	logging.basicConfig(stream=sys.stdout, format=LOGFORMAT, level=logging.INFO)
 
 logging.info("Starting " + APPNAME)
 if VERBOSE:
@@ -51,9 +54,9 @@ if VERBOSE:
 else:
 	logging.debug("INFO MODE")
 
-PYVLXLOG.setLevel(logging.INFO)
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
+PYVLXLOG.setLevel(logging.FATAL)
+ch = logging.StreamHandler(sys.stdout)
+ch.setLevel(logging.FATAL)
 PYVLXLOG.addHandler(ch)
 
 # MQTT
@@ -72,13 +75,13 @@ def mqtt_on_connect(client, userdata, flags, return_code):
 	#logging.debug("mqtt_on_connect return_code: " + str(return_code))
 	if return_code == 0:
 		logging.info("Connected to %s:%s", MQTT_HOST, MQTT_PORT)
-		mqttc.publish(STATUSTOPIC, "CONNECTED", retain=True)
+		mqttc.publish(ROOT_TOPIC + '/' + STATUSTOPIC, "CONNECTED", retain=True)
 
 		#register devices
 		for node in pyvlx.nodes:
 			if isinstance(node, OpeningDevice):
-				logging.debug(("Subscribing to %s") % (node.name + '/set'))
-				mqttc.subscribe(node.name + '/set')
+				logging.debug(("Subscribing to %s") % (ROOT_TOPIC + '/' + node.name + '/set'))
+				mqttc.subscribe(ROOT_TOPIC + '/' + node.name + '/set')
 		mqttConn = True
 	elif return_code == 1:
 		logging.info("Connection refused - unacceptable protocol version")
@@ -111,12 +114,14 @@ def mqtt_on_disconnect(mosq, obj, return_code):
 		time.sleep(5)
 
 def mqtt_on_message(client, userdata, msg):
+	global nodes
 	#set OpeningDevice? 
+	logging.debug(("got topic: %s") % (str(msg.topic)))
 	for node in pyvlx.nodes:
-		if node.name+'/set' not in msg.topic:
+		if ROOT_TOPIC + '/' + node.name + '/set' not in msg.topic:
 			continue
-		logging.debug(("Setting %s to %d%%") % (node.name, int(msg.payload)))
-		nodes[node.name] = int(msg.payload)
+		logging.debug(("Setting %s to %s") % (node.name, str(msg.payload.decode("utf-8"))))
+		nodes[node.name] = msg.payload.decode("utf-8")
 
 def cleanup(signum, frame):
 	global running
@@ -129,15 +134,18 @@ async def vlx_cb(node):
 	if not mqttConn:
 		return
 	logging.debug(("%s at %d%%") % (node.name, node.position.position_percent))
-	mqttc.publish(node.name, node.position.position_percent, retain=False)
+	mqttc.publish(ROOT_TOPIC + "/" + node.name + "/position", node.position.position_percent, retain=False)
 
 async def main(loop):
 	global running
 	global pyvlx
 	logging.debug(("klf200      : %s") % (VLX_HOST))    
 	logging.debug(("MQTT broker : %s") % (MQTT_HOST))
-	logging.debug(("  port      : %s") % (str(MQTT_PORT)))
+	if MQTT_LOGIN:
+	    logging.debug(("  port      : %s") % (str(MQTT_PORT)))
+	    logging.debug(("  login     : %s") % (MQTT_LOGIN))
 	logging.debug(("statustopic : %s") % (str(STATUSTOPIC)))
+	logging.debug(("roottopic : %s") % (str(ROOT_TOPIC)))
 
 	pyvlx = PyVLX(host=VLX_HOST, password=VLX_PW, loop=loop)
 	await pyvlx.load_nodes()
@@ -145,6 +153,10 @@ async def main(loop):
 	logging.debug(("vlx nodes   : %s") % (len(pyvlx.nodes)))
 	for node in pyvlx.nodes:
 		logging.debug(("  %s") % (node.name))
+
+    # set login and password, if available
+	if MQTT_LOGIN:
+	    mqttc.username_pw_set(MQTT_LOGIN, MQTT_PASSWORD)
 
 	# Connect to the broker and enter the main loop
 	result = mqttc.connect(MQTT_HOST, MQTT_PORT, 60)
@@ -172,13 +184,29 @@ async def main(loop):
 
 		#see if we received some mqtt commands
 		for name, value in nodes.items():
-			if value >= 0:
-				nodes[name] = -1		#mark execuded
-				await pyvlx.nodes[name].set_position(Position(position_percent=value))
+			if (str(value) == "UP"):
+				logging.debug("%s is going up", name)
+				nodes[name] = -1
+				await pyvlx.nodes[name].open(wait_for_completion=False)
+				continue
+			if (str(value) == "DOWN"):
+				logging.debug("%s is going down", name)
+				nodes[name] = -1
+				await pyvlx.nodes[name].close(wait_for_completion=False)
+				continue
+			if (str(value) == "STOP"):
+				logging.debug("%s is stopped", name)
+				nodes[name] = -1
+				await pyvlx.nodes[name].stop(wait_for_completion=False)
+				continue
+			if int(value) >= 0:
+				logging.debug(("setting %s to value %s") % (name,value))
+				nodes[name] = -1		#mark executed
+				await pyvlx.nodes[name].set_position(Position(position_percent=int(value)),wait_for_completion=False)
 
 	logging.info("Disconnecting from broker")
 	# Publish a retained message to state that this client is offline
-	mqttc.publish(STATUSTOPIC, "DISCONNECTED", retain=True)
+	mqttc.publish(ROOT_TOPIC + '/' + STATUSTOPIC, "DISCONNECTED", retain=True)
 	mqttc.disconnect()
 	mqttc.loop_stop()
 
@@ -210,4 +238,3 @@ if __name__ == '__main__':
         os.unlink(pidfile)
     LOOP.close()
     sys.exit(0)
-
