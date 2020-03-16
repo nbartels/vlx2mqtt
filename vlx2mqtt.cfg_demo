@@ -17,3 +17,4 @@ password = klf200WiFiPassword
 
 [log]
 verbose = false
+logfile = /tmp/vlx2mqtt.log
