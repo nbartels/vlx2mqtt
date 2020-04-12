@@ -211,10 +211,10 @@ async def main(loop):
                 nodes[name] = -1
                 await pyvlx.nodes[name].stop(wait_for_completion=False)
                 continue
-            if int(value) >= 0:
+            if int(float(value)) >= 0:
                 logging.debug("setting %s to value %s" % (name, value))
                 nodes[name] = -1  # mark executed
-                await pyvlx.nodes[name].set_position(Position(position_percent=int(value)), wait_for_completion=False)
+                await pyvlx.nodes[name].set_position(Position(position_percent=int(float(value))), wait_for_completion=False)
 
     logging.info("Disconnecting from broker")
     # Publish a retained message to state that this client is offline
