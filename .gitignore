@@ -1,2 +1,5 @@
 vlx2mqtt.cfg
-
+ 
+.idea/
+venv/
+.vscode/
