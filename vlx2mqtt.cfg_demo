@@ -2,8 +2,10 @@
 [mqtt]
 host = 127.0.0.1
 port = 1883
-login = mqttlogin # is optional
-password = mqttpassword # is optional, but needed if login is set
+
+# login is optional, but password is needed if login is set
+login = mqttlogin
+password = mqttpassword
 
 # root of the used topics
 roottopic = vlx2mqtt
