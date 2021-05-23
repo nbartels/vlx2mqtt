@@ -34,6 +34,10 @@ VLX_PW = config.get("velux", "password")
 VERBOSE = config.get("log", "verbose")
 LOGFILE = config.get("log", "logfile", fallback=None)
 
+TLS_ENABLED = config.getboolean("tls","enabled", fallback=False)
+TLS_ALLOW_INSECURE = config.getboolean("tls", "allow_insecure", fallback=False)
+TLS_CERT_CA_PATH = config.get("tls", "cert_path", fallback=None)
+
 APPNAME = "vlx2mqtt"
 
 running = True
@@ -68,6 +72,9 @@ PYVLXLOG.addHandler(ch)
 MQTT_CLIENT_ID = APPNAME + "_%d" % os.getpid()
 mqttc = mqtt.Client(MQTT_CLIENT_ID)
 
+if (TLS_ENABLED):
+    mqttc.tls_set(ca_certs=TLS_CERT_CA_PATH)
+    mqttc.tls_insecure_set(TLS_ALLOW_INSECURE)
 
 # 0: Connection successful
 # 1: Connection refused - incorrect protocol version
@@ -156,6 +163,7 @@ async def main(loop):
     if MQTT_LOGIN:
         logging.debug("  port      : %s" % (str(MQTT_PORT)))
         logging.debug("  login     : %s" % MQTT_LOGIN)
+    logging.debug("MQTT TLS support : %s" % TLS_ENABLED)
     logging.debug("statustopic : %s" % (str(STATUSTOPIC)))
     logging.debug("roottopic : %s" % (str(ROOT_TOPIC)))
 

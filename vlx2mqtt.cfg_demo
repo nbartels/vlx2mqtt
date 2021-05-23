@@ -12,6 +12,12 @@ roottopic = vlx2mqtt
 # topic for status messages
 statustopic = status
 
+## tls support since version 1.1
+[tls]
+enabled = no
+allow_insecure = yes
+cert_path = /certs/
+
 # KLF200 related config
 [velux]
 host = VELUX_KLF_3CB3
